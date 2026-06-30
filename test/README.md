@@ -13,8 +13,8 @@
 | 阶段 | 主题 | 状态 |
 |------|------|------|
 | stage01 | 基础：指针 / 切片 / map / 结构体 | ✅ 已通过 |
-| stage02 | 接口与错误处理 | 🔵 进行中 |
-| stage03 | 并发：goroutine / channel / context | ⚪ 未开始 |
+| stage02 | 接口与错误处理 | ✅ 已通过 |
+| stage03 | 并发：goroutine / channel / context | 🔵 进行中 |
 | stage04 | 文件与文本处理（日志采集雏形） | ⚪ 未开始 |
 | stage05 | HTTP API 服务 | ⚪ 未开始 |
 | ...  | （后续按路线图推进） | ⚪ 未开始 |

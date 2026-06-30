@@ -28,6 +28,7 @@ func main() {
 	for range baristas {
 		msg := <-c
 		fmt.Println(msg)
+		// fmt.Println(c)
 	}
 
 	fmt.Println("All drinks are ready")
