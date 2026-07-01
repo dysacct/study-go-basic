@@ -1,0 +1,20 @@
+2026-06-30 10:23:01 INFO  user login success uid=1001 ip=10.0.0.5
+2026-06-30 10:23:02 INFO  GET /api/health 200 3ms
+2026-06-30 10:23:04 WARN  slow query detected cost=850ms sql=select_users
+2026-06-30 10:23:05 ERROR db connection timeout host=10.0.0.21
+2026-06-30 10:23:06 INFO  GET /api/users 200 42ms
+2026-06-30 10:23:07 INFO  POST /api/login 200 15ms
+2026-06-30 10:23:09 ERROR panic recovered handler=UserHandler err=nil_pointer
+2026-06-30 10:23:10 WARN  memory usage high pct=87
+2026-06-30 10:23:11 INFO  GET /api/orders 200 88ms
+2026-06-30 10:23:13 ERROR db connection timeout host=10.0.0.21
+2026-06-30 10:23:14 INFO  GET /api/health 200 2ms
+2026-06-30 10:23:15 DEBUG cache hit key=user:1001
+2026-06-30 10:23:16 ERROR upstream 502 bad gateway url=/api/pay
+2026-06-30 10:23:18 WARN  slow query detected cost=1200ms sql=select_orders
+2026-06-30 10:23:19 INFO  POST /api/logout 200 8ms
+2026-06-30 10:23:20 ERROR db connection timeout host=10.0.0.22
+2026-06-30 10:23:21 INFO  GET /api/health 200 3ms
+2026-06-30 10:23:23 DEBUG cache miss key=user:2002
+2026-06-30 10:23:24 WARN  disk usage high pct=91 mount=/data
+2026-06-30 10:23:25 INFO  GET /api/products 200 120ms

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -15,18 +16,20 @@ type CheckResult struct {
 func main() {
 	start := time.Now()
 	var wg sync.WaitGroup
-
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	servers := []string{"web-01", "web-02", "db-01", "cache-01", "mq-01"}
 	results := make(chan CheckResult, len(servers))
 
 	for _, server := range servers {
 		wg.Add(1)
-		go checkServerWorker(server, 3*time.Second, results, &wg)
+		go checkServerWorker(server, ctx, results, &wg)
 	}
 
 	go func() {
 		wg.Wait()
 		close(results)
+		// cancel()
 	}()
 
 	for result := range results {
@@ -35,27 +38,60 @@ func main() {
 	fmt.Println("Time taken:", time.Since(start))
 }
 
-func checkServer(name string, results chan<- CheckResult, wg *sync.WaitGroup) {
+//func checkServer(name string, results chan<- CheckResult, wg *sync.WaitGroup) {
+//	defer wg.Done()
+//
+//	time.Sleep(2 * time.Second)
+//
+//	if len(name)%2 == 0 {
+//		results <- CheckResult{name, "ok", "服务正常"}
+//	} else {
+//		results <- CheckResult{name, "failed", "连接超时"}
+//	}
+//	fmt.Printf("✅ %s is 检查完成\n", name)
+//}
+
+//func checkServerWithTimeout(name string, timeout time.Duration) CheckResult {
+//	// 创建一个 channel 接收检测结果33
+//	resultCh := make(chan CheckResult, 1)
+//
+//	// 在goroutine 里面执行真正的检测
+//	go func() {
+//		if name == "db-01" {
+//			time.Sleep(5 * time.Second)
+//		} else {
+//			time.Sleep(2 * time.Second)
+//		}
+//
+//		if len(name)%2 == 0 {
+//			resultCh <- CheckResult{name, "ok", "服务正常"}
+//		} else {
+//			resultCh <- CheckResult{name, "failed", "连接超时"}
+//		}
+//	}()
+//
+//	// 用 select 实现超时控制
+//	select {
+//	case result := <-resultCh:
+//		return result
+//	case <-time.After(timeout):
+//		return CheckResult{name, "timeout", "检测超时"}
+//	}
+//}
+
+func checkServerWorker(name string, ctx context.Context, results chan<- CheckResult, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	time.Sleep(2 * time.Second)
-
-	if len(name)%2 == 0 {
-		results <- CheckResult{name, "ok", "服务正常"}
-	} else {
-		results <- CheckResult{name, "failed", "连接超时"}
-	}
-	fmt.Printf("✅ %s is 检查完成\n", name)
+	result := checkServerWithContext(ctx, name)
+	results <- result
 }
 
-func checkServerWithTimeout(name string, timeout time.Duration) CheckResult {
-	// 创建一个 channel 接收检测结果
+func checkServerWithContext(ctx context.Context, name string) CheckResult {
 	resultCh := make(chan CheckResult, 1)
 
-	// 在goroutine 里面执行真正的检测
 	go func() {
 		if name == "db-01" {
-			time.Sleep(5 * time.Second)
+			time.Sleep(10 * time.Second)
 		} else {
 			time.Sleep(2 * time.Second)
 		}
@@ -63,22 +99,14 @@ func checkServerWithTimeout(name string, timeout time.Duration) CheckResult {
 		if len(name)%2 == 0 {
 			resultCh <- CheckResult{name, "ok", "服务正常"}
 		} else {
-			resultCh <- CheckResult{name, "failed", "连接超时"}
+			resultCh <- CheckResult{name, "failed", "超时连接"}
 		}
 	}()
 
-	// 用 select 实现超时控制
 	select {
 	case result := <-resultCh:
 		return result
-	case <-time.After(timeout):
-		return CheckResult{name, "timeout", "检测超时"}
+	case <-ctx.Done():
+		return CheckResult{name, "cancelled", "检测被取消"}
 	}
-}
-
-func checkServerWorker(name string, timeout time.Duration, results chan<- CheckResult, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	result := checkServerWithTimeout(name, timeout)
-	results <- result
 }
