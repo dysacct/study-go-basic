@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(go run *)"
+      "Bash(go run *)",
+      "Bash(pkill -f \"go run main.go\")",
+      "Bash(pkill -f \"exe/main\")",
+      "Bash(pkill -f \"go-build\")",
+      "Bash(lsof -ti:8080)",
+      "Bash(xargs kill -9)"
     ]
   }
 }
