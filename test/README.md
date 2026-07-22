@@ -17,5 +17,6 @@
 | stage03 | 并发：goroutine / channel / context | ✅ 已通过 |
 | stage04 | 文件与文本处理（日志采集雏形） | ✅ 已通过 |
 | stage05 | HTTP API 服务 | ✅ 已通过 |
-| stage06 | 并发安全（sync.Mutex + 竞态检测） | 🔵 进行中 |
+| stage06 | 并发安全（sync.Mutex + 竞态检测） | ✅ 已通过 |
+| stage07 | HTTP 客户端 + 并发采集（Prometheus 指标雏形） | 🔵 进行中 |
 | ...  | （后续按路线图推进） | ⚪ 未开始 |

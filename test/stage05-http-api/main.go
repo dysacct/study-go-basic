@@ -21,7 +21,7 @@ var servers = []Server{
 func serversHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		//// 检查请求方法（优秀的API习惯，只允许GET请求获取资源）
+		// 检查请求方法（优秀的API习惯，只允许GET请求获取资源）
 		//if r.Method != http.MethodGet {
 		//	w.WriteHeader(http.StatusMethodNotAllowed)
 		//	_, _ = w.Write([]byte(`{"error": "method not allowed"}`))

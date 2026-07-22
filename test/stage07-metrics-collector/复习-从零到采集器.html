@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>从零垒到采集器 · 把 stage03/04/06 串起来</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --text: #e0e0e0;
+    --muted: #9a9ab0;
+    --accent: #d4724a;
+    --code-bg: #2a2a3e;
+    --border: #3a3a4e;
+    --card-bg: #222236;
+    --tag-bg: #2a1e18;
+    --tag-text: #e8956a;
+    --link: #e8956a;
+    --sidebar-w: 260px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: "Noto Sans SC", "PingFang SC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.8;
+    font-size: 16px;
+  }
+  .sidebar {
+    position: fixed; top: 0; left: 0;
+    width: var(--sidebar-w); height: 100vh;
+    background: var(--card-bg);
+    border-right: 1px solid var(--border);
+    overflow-y: auto; padding: 32px 24px 40px; z-index: 200;
+  }
+  .sidebar-title {
+    font-family: "Noto Serif SC", "Songti SC", Georgia, serif;
+    font-size: 1rem; font-weight: 700; color: var(--text);
+    margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+  }
+  .sidebar ol { list-style: none; padding: 0; }
+  .sidebar li { margin: 2px 0; }
+  .sidebar a {
+    display: block; padding: 5px 10px; font-size: .85rem;
+    color: var(--muted); text-decoration: none; border-radius: 4px; transition: all .15s;
+  }
+  .sidebar a:hover { color: var(--text); background: var(--code-bg); }
+  .sidebar a.active { color: var(--accent); background: var(--tag-bg); font-weight: 600; }
+  .sidebar-toggle {
+    display: none; position: fixed; top: 12px; left: 12px;
+    width: 36px; height: 36px; border-radius: 6px;
+    background: var(--card-bg); border: 1px solid var(--border);
+    color: var(--text); font-size: 1.2rem; cursor: pointer; z-index: 300;
+    align-items: center; justify-content: center;
+  }
+  .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.3); z-index: 190; }
+  .sidebar-overlay.show { display: block; }
+  .container { max-width: 860px; margin-left: var(--sidebar-w); padding: 40px 28px 100px; }
+  .hero { padding: 70px 0 50px; border-bottom: 1px solid var(--border); margin-bottom: 56px; }
+  .hero h1 {
+    font-family: "Noto Serif SC", "Songti SC", Georgia, serif;
+    font-size: 2.6rem; font-weight: 700; line-height: 1.25; letter-spacing: -0.02em; margin-bottom: 16px;
+  }
+  .hero .sub { font-size: 1.12rem; color: var(--muted); max-width: 620px; }
+  .hero .meta { margin-top: 28px; display: flex; gap: 18px; flex-wrap: wrap; font-size: .88rem; color: var(--muted); }
+  .hero .meta span { background: var(--tag-bg); color: var(--tag-text); padding: 4px 12px; border-radius: 20px; font-weight: 500; }
+  section { margin-bottom: 68px; }
+  h2 {
+    font-family: "Noto Serif SC", "Songti SC", Georgia, serif;
+    font-size: 1.75rem; font-weight: 700; margin-bottom: 12px; line-height: 1.35;
+    padding-bottom: 10px; border-bottom: 2px solid var(--border);
+  }
+  h3 { font-family: "Noto Serif SC", "Songti SC", Georgia, serif; font-size: 1.25rem; font-weight: 700; margin: 34px 0 12px; }
+  h4 { font-weight: 600; font-size: 1.05rem; margin: 26px 0 8px; }
+  p { margin: 12px 0; }
+  ul, ol { padding-left: 24px; margin: 14px 0; }
+  li { margin: 6px 0; }
+  code {
+    font-family: "IBM Plex Mono", "SF Mono", "Menlo", "Consolas", monospace;
+    font-size: .88em; background: var(--code-bg); padding: 2px 6px; border-radius: 4px;
+  }
+  pre {
+    font-family: "IBM Plex Mono", "SF Mono", "Menlo", "Consolas", monospace;
+    font-size: .85rem; background: #1e1e1e; color: #d4d4d4;
+    padding: 18px 22px; border-radius: 8px; overflow-x: auto; line-height: 1.6; margin: 18px 0;
+  }
+  pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+  .cm { color: #6a9955; }
+  .callout { border-left: 3px solid var(--accent); padding: 16px 20px; margin: 24px 0; background: var(--tag-bg); border-radius: 0 8px 8px 0; }
+  .callout.warn { border-color: #e0a800; background: #2e2a1a; }
+  .callout.info { border-color: #3b82f6; background: #1a2230; }
+  .callout.task { border-color: #3fb950; background: #16281c; }
+  table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: .92em; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  th { font-weight: 600; background: var(--code-bg); font-size: .85em; text-transform: uppercase; letter-spacing: .04em; }
+  tr:hover td { background: rgba(255,255,255,.03); }
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 18px; margin: 22px 0; }
+  .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 22px; }
+  .card h4 { margin: 0 0 8px; font-size: 1rem; }
+  .card p { margin: 0; font-size: .9rem; color: var(--muted); }
+  .diagram {
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px;
+    padding: 24px 28px; margin: 22px 0; font-family: "IBM Plex Mono", "SF Mono", monospace;
+    font-size: .84rem; line-height: 1.7; white-space: pre; overflow-x: auto;
+  }
+  .step { display: flex; gap: 18px; margin: 24px 0; }
+  .step-num {
+    flex-shrink: 0; width: 38px; height: 38px; border-radius: 50%;
+    background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 1.1rem;
+  }
+  .step-body h4 { margin: 0 0 4px; }
+  .brick-badge {
+    display:inline-block; background:var(--tag-bg); color:var(--tag-text);
+    font-size:.75rem; padding:2px 10px; border-radius:20px; font-weight:600;
+    vertical-align:middle; margin-left:10px;
+  }
+  footer { margin-top: 100px; padding-top: 28px; border-top: 1px solid var(--border); font-size: .85rem; color: var(--muted); }
+  @media (max-width: 960px) {
+    .sidebar { transform: translateX(-100%); transition: transform .25s; }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-toggle { display: flex; }
+    .container { margin-left: 0; padding: 50px 16px 60px; }
+    .hero h1 { font-size: 2rem; }
+    .hero { padding: 40px 0 36px; }
+    pre { font-size: .78rem; padding: 14px 16px; }
+    .card-grid { grid-template-columns: 1fr; }
+  }
+  .back-top {
+    position: fixed; bottom: 28px; right: 28px; width: 42px; height: 42px; border-radius: 50%;
+    background: var(--accent); color: #fff; border: none; cursor: pointer; font-size: 1.2rem;
+    display: none; align-items: center; justify-content: center; box-shadow: 0 2px 12px rgba(0,0,0,.15);
+    transition: opacity .25s; z-index: 100;
+  }
+  .back-top.visible { display: flex; }
+</style>
+</head>
+<body>
+
+<button class="sidebar-toggle" id="sidebarToggle" aria-label="菜单">&#9776;</button>
+<div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-title">目录</div>
+  <ol>
+    <li><a href="#intro">0 · 先别急，为什么你会忘</a></li>
+    <li><a href="#b1">积木 1 · 结构体 struct</a></li>
+    <li><a href="#b2">积木 2 · 切片 slice + append</a></li>
+    <li><a href="#b3">积木 3 · goroutine + WaitGroup</a></li>
+    <li><a href="#b4">积木 4 · Mutex 并发安全</a></li>
+    <li><a href="#b5">积木 5 · HTTP 客户端</a></li>
+    <li><a href="#b6">积木 6 · 文本解析</a></li>
+    <li><a href="#big">合体 · 垒成一个采集器（大题）</a></li>
+    <li><a href="#answers">附录 A · 基础题参考答案</a></li>
+    <li><a href="#cheat">附录 B · 速查卡</a></li>
+  </ol>
+</nav>
+
+<div class="container">
+
+<header class="hero">
+  <h1>从零垒到采集器</h1>
+  <p class="sub">你不是学不会，是没用够遍数。这份文档把 stage07 拆成 6 块小积木，一块一块重新踩实，每块配一道小题，最后合成一道大题。跟着敲，别只看。</p>
+  <div class="meta">
+    <span>运维转 Go</span>
+    <span>复习 · stage01/03/04/06</span>
+    <span>目标 · stage07 采集器</span>
+  </div>
+</header>
+
+<!-- ============ 0 · intro ============ -->
+<section id="intro">
+  <h2>0. 先别急，为什么你会「学了就忘」</h2>
+  <p>这不是智商问题，是<strong>「输入」和「输出」的次数不对等</strong>。你读一遍代码是输入，但真正刻进脑子的是输出——<strong>自己动手敲、跑、报错、改对</strong>。你运维里 <code>iptables</code> 记得牢，不是因为你聪明，是因为你敲了几百遍。代码一模一样。</p>
+
+  <div class="callout">
+    <strong>一句话方法论：</strong>看懂 ≠ 会写。这份文档每块积木都短到你能在 3 分钟内敲完跑起来。<strong>不许只看，必须每块都亲手跑一遍</strong>——手指的记忆比眼睛牢十倍。
+  </div>
+
+  <h3>这份文档怎么用</h3>
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body"><h4>一块块读积木</h4><p>每块积木结构固定：一句话是什么 → 最小可跑代码 → 运维类比 → 一道基础小题。</p></div>
+  </div>
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body"><h4>每块都新建文件敲一遍</h4><p>建个 <code>练习</code> 目录，每道小题一个 <code>.go</code> 文件，<code>go run 文件名.go</code> 跑起来。卡住了翻附录 A 的答案。</p></div>
+  </div>
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body"><h4>6 块都跑通了，再做最后的大题</h4><p>大题就是把 6 块积木垒起来的采集器。到那一步你会发现——它不过是你已经会的东西拼在一起。</p></div>
+  </div>
+
+  <div class="callout info">
+    <strong>准备工作：</strong>找个空目录，比如 <code>test/stage07-metrics-collector/练习/</code>，先跑一句 <code>go mod init lianxi</code>，后面每道小题都在这里建文件。
+  </div>
+</section>
+
+<!-- ============ 积木 1 ============ -->
+<section id="b1">
+  <h2>积木 1 · 结构体 struct<span class="brick-badge">来自 stage01</span></h2>
+  <p><strong>一句话：</strong>struct 就是「把几个相关的字段打包成一个盒子」，给这个盒子起个类型名，以后就能整盒整盒地传。</p>
+
+  <h3>最小可跑代码</h3>
+  <pre><code><span class="cm">// brick1.go</span>
+package main
+
+import "fmt"
+
+<span class="cm">// 定义一个「盒子」类型：一台服务器的信息</span>
+type Server struct {
+    Name   string
+    IP     string
+    Status string
+}
+
+func main() {
+    <span class="cm">// 造一个盒子实例</span>
+    s := Server{Name: "web-01", IP: "10.0.0.5", Status: "running"}
+
+    fmt.Println(s.Name)      <span class="cm">// 用 . 取字段 → web-01</span>
+    fmt.Println(s.Status)    <span class="cm">// running</span>
+    fmt.Printf("%+v\n", s)   <span class="cm">// 整盒打印 → {Name:web-01 IP:10.0.0.5 Status:running}</span>
+}</code></pre>
+
+  <div class="callout">
+    <strong>运维类比：</strong>struct 就像一台机器的「资产登记表」——主机名、IP、状态填在固定的格子里。你不会把这三样散着记，你会记成「一台机器 = 这么一张表」。struct 就是那张表的模板。
+  </div>
+
+  <div class="callout task">
+    <strong>基础题 1：</strong>定义一个 <code>Result</code> 结构体，含三个字段：<code>Target string</code>、<code>Success bool</code>、<code>Cost int</code>。在 <code>main</code> 里造一个实例（Target 填 <code>"http://localhost:8080"</code>，Success 填 <code>true</code>，Cost 填 <code>23</code>），然后用 <code>fmt.Printf("%+v\n", ...)</code> 整盒打印出来。
+  </div>
+</section>
+
+<!-- ============ 积木 2 ============ -->
+<section id="b2">
+  <h2>积木 2 · 切片 slice + append<span class="brick-badge">来自 stage01</span></h2>
+  <p><strong>一句话：</strong>slice 是「一串同类型的盒子」，可变长。<code>append</code> 往末尾塞一个，<code>range</code> 挨个遍历。</p>
+
+  <h3>最小可跑代码</h3>
+  <pre><code><span class="cm">// brick2.go</span>
+package main
+
+import "fmt"
+
+type Server struct {
+    Name   string
+    Status string
+}
+
+func main() {
+    <span class="cm">// 空切片：一串 Server，目前 0 个</span>
+    servers := []Server{}
+
+    <span class="cm">// append 往末尾塞。注意：必须接回原变量 servers = append(...)</span>
+    servers = append(servers, Server{Name: "web-01", Status: "running"})
+    servers = append(servers, Server{Name: "db-01", Status: "stopped"})
+
+    fmt.Println("共", len(servers), "台")   <span class="cm">// 共 2 台</span>
+
+    <span class="cm">// range 遍历：i 是下标，s 是每个元素的副本</span>
+    for i, s := range servers {
+        fmt.Println(i, s.Name, s.Status)
+    }
+}</code></pre>
+
+  <div class="callout warn">
+    <strong>最容易忘的一点：</strong><code>append</code> 的返回值必须接回去——<code>servers = append(servers, x)</code>。只写 <code>append(servers, x)</code> 不接，等于白干。原因：切片满了会「搬家」到新地址，不接回你手里还是旧的。
+  </div>
+
+  <div class="callout">
+    <strong>运维类比：</strong>slice 就像 <code>hosts</code> 文件里的一串主机，一行一台，能随时往下加。<code>range</code> 就是 <code>for h in $(cat hosts)</code> 挨个过。
+  </div>
+
+  <div class="callout task">
+    <strong>基础题 2：</strong>用切片装 3 个 <code>Server</code>（自己起名字和状态），然后 <code>range</code> 遍历，只打印状态是 <code>"running"</code> 的机器名。（练 append + range + if 判断）
+  </div>
+</section>
+
+<!-- ============ 积木 3 ============ -->
+<section id="b3">
+  <h2>积木 3 · goroutine + WaitGroup<span class="brick-badge">来自 stage03</span></h2>
+  <p><strong>一句话：</strong><code>go 函数()</code> 就是「让这个函数自己去后台跑，我不等它」；但 main 一结束程序就退了，所以要用 <code>WaitGroup</code> 数着「还有几个没跑完」，<code>Wait()</code> 卡住等全部完成。</p>
+
+  <h3>最小可跑代码</h3>
+  <pre><code><span class="cm">// brick3.go</span>
+package main
+
+import (
+    "fmt"
+    "sync"
+)
+
+func main() {
+    var wg sync.WaitGroup   <span class="cm">// 计数器，初始 0</span>
+
+    for i := 1; i &lt;= 3; i++ {
+        wg.Add(1)           <span class="cm">// 每开一个 goroutine，计数 +1</span>
+
+        go func(n int) {    <span class="cm">// go = 后台跑；n 当参数传进来（关键，见下）</span>
+            defer wg.Done() <span class="cm">// 这个 goroutine 干完，计数 -1</span>
+            fmt.Println("worker", n, "干活")
+        }(i)                <span class="cm">// 立刻把当前的 i 传进去</span>
+    }
+
+    wg.Wait()               <span class="cm">// 卡在这，直到计数归 0（3 个都 Done 了）</span>
+    fmt.Println("全部干完")
+}</code></pre>
+
+  <div class="callout warn">
+    <strong>经典坑（一定要记）：</strong>goroutine 里要用循环变量 <code>i</code>，一定<strong>当参数传进去</strong> <code>go func(n int){...}(i)</code>，别在闭包里直接用 <code>i</code>。否则 3 个 goroutine 可能都拿到最后一个值。运维类比：你 <code>for h in hosts; do ssh $h ... &amp; done</code> 时，也得确保每个后台任务拿到的是「它自己那台」主机名。
+  </div>
+
+  <div class="callout">
+    <strong>运维类比：</strong><code>go func()</code> 就是 shell 里命令后面加 <code>&amp;</code> 丢后台。<code>wg.Wait()</code> 就是 <code>wait</code> 命令——等所有后台任务都结束再往下走。
+  </div>
+
+  <div class="callout task">
+    <strong>基础题 3：</strong>并发启动 5 个 goroutine，每个打印 <code>"ping N"</code>（N 是 1 到 5）。用 <code>WaitGroup</code> 等 5 个全部打印完，最后打印一句 <code>"全部 ping 完"</code>。（记得把 N 当参数传进去）
+  </div>
+</section>
+
+<!-- ============ 积木 4 ============ -->
+<section id="b4">
+  <h2>积木 4 · Mutex 并发安全<span class="brick-badge">来自 stage06</span></h2>
+  <p><strong>一句话：</strong>多个 goroutine 同时改同一份数据（比如往同一个切片 append）会打架、丢数据。<code>Mutex</code>（互斥锁）让它们<strong>排队</strong>，一次只放一个进去改。</p>
+
+  <h3>最小可跑代码</h3>
+  <pre><code><span class="cm">// brick4.go —— 用 go run -race brick4.go 跑，验证无竞争</span>
+package main
+
+import (
+    "fmt"
+    "sync"
+)
+
+func main() {
+    var wg sync.WaitGroup
+    var mu sync.Mutex          <span class="cm">// 一把锁</span>
+    nums := []int{}            <span class="cm">// 共享切片，大家一起往里塞</span>
+
+    for i := 0; i &lt; 100; i++ {
+        wg.Add(1)
+        go func(n int) {
+            defer wg.Done()
+
+            mu.Lock()          <span class="cm">// 进门，锁上。别人只能在门外等</span>
+            nums = append(nums, n)
+            mu.Unlock()        <span class="cm">// 出门，开锁。下一个才能进</span>
+        }(i)
+    }
+
+    wg.Wait()
+    fmt.Println("塞了", len(nums), "个")   <span class="cm">// 稳定是 100；不加锁可能少于 100</span>
+}</code></pre>
+
+  <div class="callout warn">
+    <strong>两条铁律：</strong>① <code>Lock()</code> 和 <code>Unlock()</code> 必须成对，常写成 <code>mu.Lock(); defer mu.Unlock()</code> 防漏。② 锁里只放「改数据」这一下，别把联网、打印这些慢活锁进去——锁占越久，别人等越久。
+  </div>
+
+  <div class="callout">
+    <strong>运维类比：</strong>Mutex 就是 <code>flock</code> 文件锁。多个脚本同时写一个文件会写乱，加 <code>flock</code> 让它们排队。<code>go run -race</code> 就是「照妖镜」，专抓没加锁的并发读写。
+  </div>
+
+  <div class="callout task">
+    <strong>基础题 4：</strong>把基础题 3 升级——开 100 个 goroutine，每个往一个共享的 <code>[]int</code> 里 append 自己的编号，用 <code>Mutex</code> 保护。最后打印 <code>len</code>，应该稳定是 100。用 <code>go run -race brick4.go</code> 跑，确认没有 <code>DATA RACE</code> 警告。
+  </div>
+</section>
+
+<!-- ============ 积木 5 ============ -->
+<section id="b5">
+  <h2>积木 5 · HTTP 客户端<span class="brick-badge">stage07 新知识</span></h2>
+  <p><strong>一句话：</strong>前面写的都是「服务端」（等别人来）。客户端反过来——<strong>你主动去 GET 别人的接口</strong>。核心就三行：建带超时的 client、<code>client.Get(url)</code>、<code>defer resp.Body.Close()</code>。</p>
+
+  <h3>最小可跑代码</h3>
+  <pre><code><span class="cm">// brick5.go —— 先启动 stage06 的服务（:8080），再跑这个</span>
+package main
+
+import (
+    "fmt"
+    "io"
+    "net/http"
+    "time"
+)
+
+func main() {
+    <span class="cm">// ① 建一个带超时的 client（别用裸 http.Get，它没超时会永远卡）</span>
+    client := &amp;http.Client{Timeout: 3 * time.Second}
+
+    <span class="cm">// ② 主动发 GET</span>
+    resp, err := client.Get("http://localhost:8080/health")
+    if err != nil {
+        <span class="cm">// 连不上、超时、DNS 失败都走这（网络层错误）</span>
+        fmt.Println("请求失败:", err)
+        return
+    }
+    defer resp.Body.Close()   <span class="cm">// ③ 必须关，否则连接泄漏</span>
+
+    <span class="cm">// ④ 读响应体</span>
+    body, _ := io.ReadAll(resp.Body)
+
+    fmt.Println("状态码:", resp.StatusCode)   <span class="cm">// 200</span>
+    fmt.Println("内容:", string(body))        <span class="cm">// OK</span>
+}</code></pre>
+
+  <div class="callout warn">
+    <strong>最反直觉的一点：</strong><code>err == nil</code> 不代表成功！HTTP 500 / 404 时 <code>err</code> 照样是 <code>nil</code>（因为「网络通了、拿到响应了」本身没出错）。要不要算成功，得另外看 <code>resp.StatusCode</code> 是不是 2xx。类比：电话打通了（err==nil）≠ 对方答应了你（2xx）。
+  </div>
+
+  <div class="callout">
+    <strong>运维类比：</strong>这就是 Go 版的 <code>curl -m 3 http://...</code>。<code>-m 3</code> 就是那个 3 秒超时；查 <code>$?</code> 和 HTTP 状态码，就是分别看 <code>err</code> 和 <code>resp.StatusCode</code>。
+  </div>
+
+  <div class="callout task">
+    <strong>基础题 5：</strong>先启动 stage06 的服务当靶子（<code>cd stage06-concurrent-safe &amp;&amp; go run .</code>）。然后写程序：<strong>用带超时的 client</strong> 探测 <code>http://localhost:8080/health</code>，打印状态码；再探测一个<strong>故意连不上</strong>的地址 <code>http://localhost:9999/nope</code>，确认它走 <code>err != nil</code> 分支打印错误、程序不崩。（练超时 client + err 分支 + defer Close）
+  </div>
+</section>
+
+<!-- ============ 积木 6 ============ -->
+<section id="b6">
+  <h2>积木 6 · 文本解析<span class="brick-badge">来自 stage04</span></h2>
+  <p><strong>一句话：</strong>把一段多行文本，用 <code>bufio.Scanner</code> 逐行读，<code>strings</code> 切一切，<code>strconv</code> 把字符串数字转成真数字。这是日志分析、指标解析的通用手艺。</p>
+
+  <h3>最小可跑代码</h3>
+  <pre><code><span class="cm">// brick6.go</span>
+package main
+
+import (
+    "bufio"
+    "fmt"
+    "strconv"
+    "strings"
+)
+
+func main() {
+    text := `# 这是注释行，要跳过
+cpu 80
+mem 60
+
+disk 45`
+
+    <span class="cm">// 把字符串包成可逐行扫描的 Scanner</span>
+    scanner := bufio.NewScanner(strings.NewReader(text))
+
+    total := 0
+    for scanner.Scan() {
+        line := strings.TrimSpace(scanner.Text())   <span class="cm">// 去掉首尾空白</span>
+
+        <span class="cm">// 跳过空行 和 # 注释行</span>
+        if line == "" || strings.HasPrefix(line, "#") {
+            continue
+        }
+
+        <span class="cm">// 按空格切成若干段：["cpu", "80"]</span>
+        parts := strings.Fields(line)
+        if len(parts) &lt; 2 {
+            continue
+        }
+
+        name := parts[0]
+        value, err := strconv.Atoi(parts[1])   <span class="cm">// 字符串 "80" → 数字 80</span>
+        if err != nil {
+            continue
+        }
+
+        fmt.Printf("%s = %d\n", name, value)
+        total += value
+    }
+    fmt.Println("总和:", total)   <span class="cm">// 80+60+45 = 185</span>
+}</code></pre>
+
+  <div class="callout">
+    <strong>运维类比：</strong>这就是 Go 版的 <code>grep -v '^#' file | awk '{print $1, $2}'</code>。<code>bufio.Scanner</code> = 逐行读，<code>strings.Fields</code> = <code>awk</code> 按空格切列，<code>strconv.Atoi</code> = 把文本数字变成能算的数。
+  </div>
+
+  <div class="callout task">
+    <strong>基础题 6：</strong>给定下面这段文本（硬编码成字符串），逐行解析，<strong>跳过 <code>#</code> 注释和空行</strong>，打印每个指标名和值，并算出所有值的总和。用 <code>strconv.ParseFloat(s, 64)</code> 转成 <code>float64</code>（因为有小数）。
+    <pre><code># HELP 磁盘使用
+node_load 1.5
+node_temp 42.3
+
+node_mem 78.0</code></pre>
+  </div>
+</section>
+
+<!-- ============ 合体大题 ============ -->
+<section id="big">
+  <h2>合体 · 把 6 块积木垒成一个采集器（大题）</h2>
+  <p>到这一步，如果前面 6 块你都亲手跑通了，这道大题<strong>没有一个新知识点</strong>——它就是把你已经会的东西拼起来。别怕，跟着骨架填空。</p>
+
+  <h3>要做什么</h3>
+  <p>写一个 mini 采集器：给一批 URL，<strong>并发</strong>去探测每一个，把「通不通、状态码、耗时」记成结果，最后打印汇总。这正好是 stage07 的任务 1 + 任务 2 的核心。</p>
+
+  <div class="diagram">这道大题用到哪几块积木：
+
+  积木1 struct    →  定义 Result（装一次探测的结果）
+  积木5 HTTP客户端 →  probe() 探测单个目标
+  积木3 goroutine →  并发探测多个目标
+  积木4 Mutex     →  安全地把结果 append 进共享切片
+  积木2 slice     →  用切片收集所有 Result，range 打印
+  （积木6 文本解析这道大题用不上，它是 stage07 后半段任务 3 的）</div>
+
+  <h3>给你搭好的骨架（把 TODO 填上）</h3>
+  <pre><code><span class="cm">// main.go —— 用 go run -race main.go 跑</span>
+package main
+
+import (
+    "fmt"
+    "io"
+    "net/http"
+    "sync"
+    "time"
+)
+
+<span class="cm">// —— 积木1：定义结果盒子 ——</span>
+type Result struct {
+    Target     string
+    Success    bool
+    StatusCode int
+    Duration   time.Duration
+    Err        string
+}
+
+<span class="cm">// —— 积木5：探测单个目标 ——</span>
+func probe(client *http.Client, url string) Result {
+    start := time.Now()
+
+    <span class="cm">// TODO 1: client.Get(url)</span>
+    <span class="cm">// TODO 2: if err != nil → 返回一个 Success:false、Err 填 err、Duration 填 time.Since(start) 的 Result</span>
+    <span class="cm">// TODO 3: defer resp.Body.Close()；再 io.Copy(io.Discard, resp.Body) 把body读干净</span>
+    <span class="cm">// TODO 4: 返回 Result，Success 判断 StatusCode 在 200~299，填上 StatusCode 和 Duration</span>
+
+    return Result{} <span class="cm">// ← 删掉这行，换成你上面 TODO 拼出来的</span>
+}
+
+func main() {
+    client := &amp;http.Client{Timeout: 3 * time.Second}
+
+    targets := []string{
+        "http://localhost:8080/health",   <span class="cm">// 正常（先起 stage06）</span>
+        "http://localhost:8080/servers",  <span class="cm">// 正常</span>
+        "http://localhost:9999/nope",     <span class="cm">// 故意连不上，测错误隔离</span>
+    }
+
+    <span class="cm">// —— 积木3 + 积木4：并发探测，加锁收集 ——</span>
+    var wg sync.WaitGroup
+    var mu sync.Mutex
+    results := []Result{}
+
+    for _, url := range targets {
+        <span class="cm">// TODO 5: wg.Add(1)</span>
+        <span class="cm">// TODO 6: go func(u string){ ... }(url) —— 注意 url 当参数传！</span>
+        <span class="cm">//         里面：defer wg.Done()</span>
+        <span class="cm">//              r := probe(client, u)   // 慢活（联网）在锁外</span>
+        <span class="cm">//              mu.Lock(); results = append(results, r); mu.Unlock()</span>
+    }
+    <span class="cm">// TODO 7: wg.Wait()</span>
+
+    <span class="cm">// —— 积木2：range 打印汇总 ——</span>
+    for _, r := range results {
+        if r.Success {
+            fmt.Printf("[OK]   %-34s 状态=%d 耗时=%v\n", r.Target, r.StatusCode, r.Duration)
+        } else {
+            fmt.Printf("[FAIL] %-34s 错误=%s\n", r.Target, r.Err)
+        }
+    }
+}</code></pre>
+
+  <div class="callout task">
+    <strong>大题验收标准：</strong>
+    <ul>
+      <li>先起 stage06 服务：<code>cd stage06-concurrent-safe &amp;&amp; go run .</code></li>
+      <li>再跑你的采集器：<code>go run -race main.go</code></li>
+      <li>两个正常目标打印 <code>[OK]</code> + 状态码 200；9999 那个打印 <code>[FAIL]</code>，且<strong>不影响另外两个</strong>（这叫错误隔离）</li>
+      <li><code>-race</code> 没有任何 <code>DATA RACE</code> 警告</li>
+    </ul>
+    做出来了，对我说「<strong>检查</strong>」。这道大题过了，stage07 的地基就实了，剩下的任务 3、4 是顺水推舟。
+  </div>
+
+  <div class="callout info">
+    <strong>卡住别硬扛：</strong>哪个 TODO 卡住了，回去重看对应积木的「最小可跑代码」——答案就在那里，你只是把它搬过来改个变量名。这就是「串联」的真相：大项目 = 小积木的搬运和拼接。
+  </div>
+</section>
+
+<!-- ============ 附录 A：答案 ============ -->
+<section id="answers">
+  <h2>附录 A · 基础题参考答案（先自己写，再对）</h2>
+  <div class="callout warn">
+    <strong>先别偷看。</strong>自己写完跑通了，再来对答案。直接抄答案 = 又一次「输入」，你还是会忘。
+  </div>
+
+  <h3>基础题 1 答案</h3>
+  <pre><code>package main
+
+import "fmt"
+
+type Result struct {
+    Target  string
+    Success bool
+    Cost    int
+}
+
+func main() {
+    r := Result{Target: "http://localhost:8080", Success: true, Cost: 23}
+    fmt.Printf("%+v\n", r)   <span class="cm">// {Target:http://localhost:8080 Success:true Cost:23}</span>
+}</code></pre>
+
+  <h3>基础题 2 答案</h3>
+  <pre><code>package main
+
+import "fmt"
+
+type Server struct {
+    Name   string
+    Status string
+}
+
+func main() {
+    servers := []Server{}
+    servers = append(servers, Server{Name: "web-01", Status: "running"})
+    servers = append(servers, Server{Name: "db-01", Status: "stopped"})
+    servers = append(servers, Server{Name: "cache-01", Status: "running"})
+
+    for _, s := range servers {
+        if s.Status == "running" {
+            fmt.Println(s.Name)   <span class="cm">// web-01 / cache-01</span>
+        }
+    }
+}</code></pre>
+
+  <h3>基础题 3 答案</h3>
+  <pre><code>package main
+
+import (
+    "fmt"
+    "sync"
+)
+
+func main() {
+    var wg sync.WaitGroup
+    for i := 1; i &lt;= 5; i++ {
+        wg.Add(1)
+        go func(n int) {
+            defer wg.Done()
+            fmt.Println("ping", n)
+        }(i)
+    }
+    wg.Wait()
+    fmt.Println("全部 ping 完")
+}</code></pre>
+
+  <h3>基础题 4 答案</h3>
+  <pre><code>package main
+
+import (
+    "fmt"
+    "sync"
+)
+
+func main() {
+    var wg sync.WaitGroup
+    var mu sync.Mutex
+    nums := []int{}
+
+    for i := 0; i &lt; 100; i++ {
+        wg.Add(1)
+        go func(n int) {
+            defer wg.Done()
+            mu.Lock()
+            nums = append(nums, n)
+            mu.Unlock()
+        }(i)
+    }
+    wg.Wait()
+    fmt.Println("塞了", len(nums), "个")   <span class="cm">// 100</span>
+}
+<span class="cm">// go run -race brick4.go → 无 DATA RACE</span></code></pre>
+
+  <h3>基础题 5 答案</h3>
+  <pre><code>package main
+
+import (
+    "fmt"
+    "net/http"
+    "time"
+)
+
+func main() {
+    client := &amp;http.Client{Timeout: 3 * time.Second}
+
+    for _, url := range []string{
+        "http://localhost:8080/health",
+        "http://localhost:9999/nope",
+    } {
+        resp, err := client.Get(url)
+        if err != nil {
+            fmt.Printf("%s → 失败: %v\n", url, err)
+            continue   <span class="cm">// 一个失败不影响下一个</span>
+        }
+        fmt.Printf("%s → 状态码 %d\n", url, resp.StatusCode)
+        resp.Body.Close()
+    }
+}</code></pre>
+
+  <h3>基础题 6 答案</h3>
+  <pre><code>package main
+
+import (
+    "bufio"
+    "fmt"
+    "strconv"
+    "strings"
+)
+
+func main() {
+    text := `# HELP 磁盘使用
+node_load 1.5
+node_temp 42.3
+
+node_mem 78.0`
+
+    scanner := bufio.NewScanner(strings.NewReader(text))
+    total := 0.0
+    for scanner.Scan() {
+        line := strings.TrimSpace(scanner.Text())
+        if line == "" || strings.HasPrefix(line, "#") {
+            continue
+        }
+        parts := strings.Fields(line)
+        if len(parts) &lt; 2 {
+            continue
+        }
+        v, err := strconv.ParseFloat(parts[1], 64)
+        if err != nil {
+            continue
+        }
+        fmt.Printf("%s = %g\n", parts[0], v)
+        total += v
+    }
+    fmt.Printf("总和: %g\n", total)   <span class="cm">// 121.8</span>
+}</code></pre>
+</section>
+
+<!-- ============ 附录 B：速查卡 ============ -->
+<section id="cheat">
+  <h2>附录 B · 速查卡（贴屏幕边上）</h2>
+  <table>
+    <tr><th>要干什么</th><th>怎么写</th></tr>
+    <tr><td>定义数据盒子</td><td><code>type X struct { A string; B int }</code></td></tr>
+    <tr><td>造实例</td><td><code>x := X{A: "hi", B: 1}</code></td></tr>
+    <tr><td>切片加元素</td><td><code>s = append(s, x)</code>（必须接回）</td></tr>
+    <tr><td>遍历切片</td><td><code>for _, v := range s { ... }</code></td></tr>
+    <tr><td>后台跑函数</td><td><code>go func(n int){ ... }(i)</code>（传参！）</td></tr>
+    <tr><td>等所有 goroutine</td><td><code>wg.Add(1)</code> / <code>defer wg.Done()</code> / <code>wg.Wait()</code></td></tr>
+    <tr><td>保护共享数据</td><td><code>mu.Lock(); ...; mu.Unlock()</code></td></tr>
+    <tr><td>发 HTTP 请求</td><td><code>client := &amp;http.Client{Timeout: 3*time.Second}</code><br><code>resp, err := client.Get(url)</code></td></tr>
+    <tr><td>关闭响应体</td><td><code>defer resp.Body.Close()</code>（先判 err！）</td></tr>
+    <tr><td>判断请求成功</td><td><code>err == nil &amp;&amp; resp.StatusCode/100 == 2</code></td></tr>
+    <tr><td>逐行读文本</td><td><code>sc := bufio.NewScanner(strings.NewReader(t))</code><br><code>for sc.Scan() { sc.Text() }</code></td></tr>
+    <tr><td>按空格切列</td><td><code>strings.Fields(line)</code></td></tr>
+    <tr><td>文本转数字</td><td><code>strconv.Atoi(s)</code> / <code>strconv.ParseFloat(s, 64)</code></td></tr>
+    <tr><td>验证并发安全</td><td><code>go run -race main.go</code></td></tr>
+  </table>
+
+  <div class="callout">
+    <strong>记住这句就够了：</strong>大项目 = 小积木的搬运 + 拼接。你不会写「采集器」，但你会写「探测一个 URL」「并发跑」「加锁 append」——把它们搬到一起，就是采集器。<strong>卡住就回去看对应那块积木，答案一直在那。</strong>
+  </div>
+</section>
+
+<footer>
+  <p>Go 学习复习文档 · 从 stage01/03/04/06 串联到 stage07 采集器 · 跟着敲，别只看。</p>
+</footer>
+
+</div>
+
+<button class="back-top" id="backTop" title="回到顶部">&#8593;</button>
+
+<script>
+  const btn = document.getElementById('backTop');
+  window.addEventListener('scroll', () => {
+    btn.classList.toggle('visible', window.scrollY > 600);
+  });
+  btn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+  const sections = document.querySelectorAll('section[id]');
+  const navLinks = document.querySelectorAll('.sidebar a');
+  function setActiveLink() {
+    let current = '';
+    sections.forEach(section => {
+      const top = section.getBoundingClientRect().top;
+      if (top <= 120) { current = section.getAttribute('id'); }
+    });
+    navLinks.forEach(a => {
+      a.classList.toggle('active', a.getAttribute('href') === '#' + current);
+    });
+  }
+  window.addEventListener('scroll', setActiveLink);
+
+  const sidebar = document.getElementById('sidebar');
+  const toggle = document.getElementById('sidebarToggle');
+  const overlay = document.getElementById('sidebarOverlay');
+  function openSidebar() { sidebar.classList.add('open'); overlay.classList.add('show'); }
+  function closeSidebar() { sidebar.classList.remove('open'); overlay.classList.remove('show'); }
+  toggle.addEventListener('click', openSidebar);
+  overlay.addEventListener('click', closeSidebar);
+  navLinks.forEach(a => { a.addEventListener('click', closeSidebar); });
+</script>
+
+</body>
+</html>

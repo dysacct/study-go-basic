@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stage06 并发安全 · 门道详解</title>
+<style>
+  :root{
+    --bg:#0d1117; --card:#161b22; --border:#30363d;
+    --text:#c9d1d9; --dim:#8b949e; --accent:#58a6ff;
+    --green:#3fb950; --red:#f85149; --yellow:#d29922; --purple:#bc8cff;
+    --code-bg:#0b0f14;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    line-height:1.75; font-size:16px;
+  }
+  .wrap{max-width:900px; margin:0 auto; padding:40px 24px 120px}
+  h1{font-size:30px; border-bottom:2px solid var(--accent); padding-bottom:14px}
+  h1 .sub{display:block; font-size:15px; color:var(--dim); font-weight:400; margin-top:8px}
+  h2{font-size:23px; margin-top:52px; color:var(--accent);
+     border-left:4px solid var(--accent); padding-left:12px}
+  h3{font-size:18px; margin-top:34px; color:var(--purple)}
+  code{background:var(--code-bg); padding:2px 6px; border-radius:4px;
+       font-family:"SF Mono",Menlo,Consolas,monospace; font-size:14px; color:#e6edf3}
+  pre{background:var(--code-bg); border:1px solid var(--border); border-radius:10px;
+      padding:18px; overflow-x:auto; font-size:14px; line-height:1.6}
+  pre code{background:none; padding:0}
+  .card{background:var(--card); border:1px solid var(--border); border-radius:12px;
+        padding:22px 26px; margin:22px 0}
+  .analogy{border-left:4px solid var(--yellow); background:rgba(210,153,34,.08);
+           padding:14px 20px; border-radius:0 8px 8px 0; margin:18px 0}
+  .analogy b{color:var(--yellow)}
+  .warn{border-left:4px solid var(--red); background:rgba(248,81,73,.08);
+        padding:14px 20px; border-radius:0 8px 8px 0; margin:18px 0}
+  .ok{border-left:4px solid var(--green); background:rgba(63,185,80,.08);
+      padding:14px 20px; border-radius:0 8px 8px 0; margin:18px 0}
+  .tag{display:inline-block; font-size:12px; padding:2px 10px; border-radius:20px;
+       font-weight:600; vertical-align:middle}
+  .tag-red{background:rgba(248,81,73,.15); color:var(--red); border:1px solid var(--red)}
+  .tag-green{background:rgba(63,185,80,.15); color:var(--green); border:1px solid var(--green)}
+  table{width:100%; border-collapse:collapse; margin:18px 0; font-size:14.5px}
+  th,td{border:1px solid var(--border); padding:10px 14px; text-align:left}
+  th{background:#1c2128; color:var(--accent)}
+  .c-comment{color:#6a9955}
+  .c-key{color:#569cd6}
+  .c-str{color:#ce9178}
+  .c-fn{color:#dcdcaa}
+  .c-type{color:#4ec9b0}
+  .hl{background:rgba(210,153,34,.18); border-radius:3px; padding:0 3px}
+  .flow{display:flex; gap:14px; flex-wrap:wrap; margin:20px 0}
+  .flow .box{flex:1; min-width:160px; background:var(--card); border:1px solid var(--border);
+             border-radius:10px; padding:16px; text-align:center}
+  .flow .box .t{font-weight:700; color:var(--accent); margin-bottom:6px}
+  .flow .arrow{align-self:center; color:var(--dim); font-size:22px}
+  details{background:var(--card); border:1px solid var(--border); border-radius:10px;
+          padding:6px 20px; margin:16px 0}
+  summary{cursor:pointer; font-weight:600; padding:12px 0; color:var(--accent)}
+  .race-anim{font-family:"SF Mono",monospace; font-size:13.5px; line-height:2}
+  .g-a{color:var(--green); font-weight:700}
+  .g-b{color:var(--purple); font-weight:700}
+  .lost{color:var(--red); text-decoration:line-through}
+  .toc{background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px 26px}
+  .toc a{color:var(--accent); text-decoration:none}
+  .toc a:hover{text-decoration:underline}
+  .footer{margin-top:60px; padding-top:20px; border-top:1px solid var(--border);
+          color:var(--dim); font-size:14px}
+  kbd{background:#1c2128; border:1px solid var(--border); border-bottom-width:2px;
+      border-radius:5px; padding:1px 7px; font-size:13px; font-family:monospace}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Stage06 · 并发安全的门道
+  <span class="sub">从「单人能跑」到「多人并发也不崩」——运维转 Go 的一道分水岭</span>
+</h1>
+
+<div class="toc">
+  <b>本文讲什么(点击跳转)</b>
+  <ol>
+    <li><a href="#arch">先看全局:你把代码拆成了 4 个包</a></li>
+    <li><a href="#race">病根:数据竞争(Data Race)到底是什么</a></li>
+    <li><a href="#mutex">药方一:RWMutex 读写锁怎么工作</a></li>
+    <li><a href="#pointer">药方二:为什么 New() 必须返回指针</a></li>
+    <li><a href="#copy">魔鬼细节:List() 为什么要 return 一份副本</a></li>
+    <li><a href="#critical">性能门道:临界区为什么要"尽量小"</a></li>
+    <li><a href="#encap">封装的价值:锁藏起来,别人想忘都忘不了</a></li>
+    <li><a href="#bug">你刚才犯的那个错,复盘</a></li>
+    <li><a href="#verify">怎么证明它真的安全:-race 照妖镜</a></li>
+  </ol>
+</div>
+
+<!-- ============ 1 ============ -->
+<h2 id="arch">1. 先看全局:你把代码拆成了 4 个包</h2>
+
+<p>stage05 时你所有东西都堆在一个 <code>main.go</code> 里。这一关你主动拆成了标准的分层结构,这一步做得非常漂亮——这就是真实 Go 项目的样子。</p>
+
+<div class="flow">
+  <div class="box"><div class="t">model</div>数据长什么样<br><code>Server{}</code></div>
+  <div class="arrow">←</div>
+  <div class="box"><div class="t">store</div>数据存哪、怎么<b>安全</b>存取<br><code>ServerStore</code>+锁</div>
+  <div class="arrow">←</div>
+  <div class="box"><div class="t">handler</div>处理 HTTP 请求<br>调 store 的方法</div>
+  <div class="arrow">←</div>
+  <div class="box"><div class="t">main</div>组装 & 启动<br>接线员</div>
+</div>
+
+<div class="analogy">
+  <b>运维类比:</b>这就像你拆分 Ansible 的角色(roles)。<code>model</code> 是 <code>defaults/</code>(定义变量结构),<code>store</code> 是 <code>tasks/</code> 里真正干活并保证幂等的逻辑,<code>handler</code> 是 <code>playbook</code> 的入口任务,<code>main</code> 是那个 <code>site.yml</code>——把角色串起来跑。各司其职,谁坏了改谁。
+</div>
+
+<p>依赖方向是<b>单向</b>的:main → handler → store → model。底层的 model 不认识上层的 handler。这叫<b>依赖倒置</b>,是好架构的标志——你天生就写对了。</p>
+
+<!-- ============ 2 ============ -->
+<h2 id="race">2. 病根:数据竞争(Data Race)到底是什么</h2>
+
+<p>先记住一句话,这是整个 net/http 世界的地基:</p>
+
+<div class="card" style="text-align:center; font-size:19px; color:var(--yellow)">
+  🔑 <b>每一个 HTTP 请求,Go 都单独开一个 goroutine 去处理。</b>
+</div>
+
+<p>所以 10 个运维同时点"新增服务器",不是排队进来的,是 <b>10 个 goroutine 同时冲进你的 <code>Add()</code></b>。它们抢着改同一个 <code>servers</code> 切片。</p>
+
+<h3>为什么"同时改"会出事?因为 append 不是一步到位的</h3>
+
+<p>你以为 <code>servers = append(servers, x)</code> 是一个原子动作。CPU 底层其实分三步:</p>
+
+<pre><code><span class="c-comment">// append 在 CPU 眼里的真实步骤</span>
+第①步:读出 servers 当前长度  (比如 len = 3)
+第②步:往第 3 号槽位写入新元素
+第③步:把长度更新成 4</code></pre>
+
+<p>现在两个 goroutine <span class="g-a">A</span>(想加 web-99)和 <span class="g-b">B</span>(想加 db-99)<b>同时</b>跑,CPU 把它们的步骤交错执行:</p>
+
+<div class="card race-anim">
+时刻1&nbsp;&nbsp;<span class="g-a">A 读到 len=3</span> ┐<br>
+时刻2&nbsp;&nbsp;<span class="g-b">B 读到 len=3</span> ┘ ← 两个都以为该写 3 号槽<br>
+时刻3&nbsp;&nbsp;<span class="g-a">A 把 web-99 写进 3 号槽</span><br>
+时刻4&nbsp;&nbsp;<span class="g-b">B 把 db-99 写进 3 号槽</span> ← <span class="lost">web-99 被覆盖了!</span><br>
+时刻5&nbsp;&nbsp;<span class="g-a">A 把 len 改成 4</span><br>
+时刻6&nbsp;&nbsp;<span class="g-b">B 把 len 改成 4</span> ← 本该是 5<br>
+<br>
+结果:<span class="red">A 新增的 web-99 凭空消失</span>,长度还错了。
+</div>
+
+<div class="warn">
+  <b>更凶的情况:</b>如果 append 正好触发<b>扩容</b>(底层数组要搬到更大的新数组),一个 goroutine 正在搬家,另一个来读——可能直接读到<b>野内存地址</b>,程序 <code>panic</code> 崩溃。这不是"数据错一点"的问题,是整个服务挂掉。
+</div>
+
+<div class="analogy">
+  <b>运维类比:</b>两个脚本同时 <code>echo xxx &gt;&gt; app.log</code> 追加写同一个文件,又都没加锁。A 写 "web-99"、B 写 "db-99",结果文件里可能变成 <code>weweb-99b-99</code> ——字节交错错乱。你平时用 <code>flock /var/lock/xx.lock -c '...'</code> 防的<b>就是这个</b>。<code>sync.Mutex</code> 就是 Go 版的 flock。
+</div>
+
+<!-- ============ 3 ============ -->
+<h2 id="mutex">3. 药方一:RWMutex 读写锁怎么工作</h2>
+
+<p>你选了 <code>sync.RWMutex</code>(读写锁)而不是普通 <code>Mutex</code>,这个选择对 CMDB 这种<b>读多写少</b>的场景是最优的。它有两种锁:</p>
+
+<table>
+  <tr><th>方法</th><th>叫什么</th><th>能同时几个?</th><th>你用在哪</th></tr>
+  <tr><td><code>RLock()</code>/<code>RUnlock()</code></td><td>读锁(共享锁)</td><td class="tag-green" style="border-radius:0">多个读可同时进</td><td><code>List()</code>、<code>Find()</code></td></tr>
+  <tr><td><code>Lock()</code>/<code>Unlock()</code></td><td>写锁(排他锁)</td><td class="tag-red" style="border-radius:0">独占,读写全挡外面</td><td><code>Add()</code></td></tr>
+</table>
+
+<p>核心规则,记死它:</p>
+<div class="card">
+  <p style="margin:4px 0"><span class="tag tag-green">读 + 读</span> → 放行 ✅ &nbsp;(10 个人同时查列表,互不阻塞,快)</p>
+  <p style="margin:4px 0"><span class="tag tag-red">读 + 写</span> → 互斥 🚫 &nbsp;(有人在改,查的人必须等)</p>
+  <p style="margin:4px 0"><span class="tag tag-red">写 + 写</span> → 互斥 🚫 &nbsp;(两个人不能同时改)</p>
+</div>
+
+<div class="analogy">
+  <b>运维类比:</b>像一间机房。<b>看监控大屏(读)</b>可以一堆人同时看,不冲突。但<b>进机柜插拔硬件(写)</b>时,得挂"维护中"牌子,其他人(包括来看的)都得在门外等——因为你正在改变机房状态,别人这时看到的可能是插一半的状态。
+</div>
+
+<p>你的 <code>Add()</code> 正是这么写的,教科书级:</p>
+<pre><code><span class="c-key">func</span> (s *<span class="c-type">ServerStore</span>) <span class="c-fn">Add</span>(server model.Server) {
+    s.mu.<span class="c-fn">Lock</span>()            <span class="c-comment">// 上写锁:我要改了,谁都别动</span>
+    <span class="c-key">defer</span> s.mu.<span class="c-fn">Unlock</span>()   <span class="c-comment">// 函数一返回就解锁(关键!见下)</span>
+    s.servers = <span class="c-fn">append</span>(s.servers, server)
+}</code></pre>
+
+<div class="warn">
+  <b>为什么必须配 <code>defer Unlock()</code>?</b>假如某个分支 <code>return</code> 或 <code>panic</code> 了却忘了解锁,这把锁就<b>永远没人释放</b>——后面所有 goroutine 执行到 <code>Lock()</code> 全部卡死,整个服务<b>死锁</b>,一个请求都处理不了。<code>defer</code> 保证"无论从哪个出口离开函数,锁一定被释放"。这跟 Shell 里 <code>trap 'flock -u 200' EXIT</code> 是一个道理。
+</div>
+
+<!-- ============ 4 ============ -->
+<h2 id="pointer">4. 药方二:为什么 New() 必须返回指针 <code>*ServerStore</code></h2>
+
+<p>我给你补的 <code>New()</code> 返回的是 <code>*ServerStore</code>(指针),不是 <code>ServerStore</code>(值)。这不是随手写的,是<b>硬性要求</b>:</p>
+
+<div class="card" style="text-align:center; font-size:18px; color:var(--red)">
+  ⚠️ <b>含有 sync.Mutex 的结构体,永远不能被复制(copy)。</b>
+</div>
+
+<p>为什么?锁的本质是一个记录"当前谁持有我"的内存状态。如果你按<b>值</b>传递 <code>ServerStore</code>,Go 会把整个结构体(<b>连同那把锁一起</b>)复制一份。于是:</p>
+
+<pre><code>store1 的锁  ──复制──▶  store2 的锁   <span class="c-comment">// 变成两把独立的锁!</span>
+
+goroutine A 锁了 store1 的锁
+goroutine B 锁了 store2 的锁   ← 两把不同的锁,谁也拦不住谁
+两个 goroutine 同时改了同一份底层数据 💥</code></pre>
+
+<p>锁复制之后就<b>失效</b>了——你以为加了锁,其实每个副本各锁各的,等于没锁。用指针,大家操作的永远是<b>同一个</b> ServerStore、<b>同一把</b>锁。</p>
+
+<div class="ok">
+  <b>好消息:</b>你不用记这条规则也能被救。<code>go vet ./...</code>(我刚才跑过)会自动检查"锁被复制"这种错误并报警。养成提交前 <code>go vet</code> 的习惯,它是免费的保镖。
+</div>
+
+<!-- ============ 5 ============ -->
+<h2 id="copy">5. 魔鬼细节:List() 为什么要 <code>return</code> 一份副本</h2>
+
+<p>你 <code>List()</code> 里这行,看着别扭,其实是<b>最容易被忽略的正确</b>:</p>
+
+<pre><code><span class="c-key">func</span> (s *<span class="c-type">ServerStore</span>) <span class="c-fn">List</span>() []model.Server {
+    s.mu.<span class="c-fn">RLock</span>()
+    <span class="c-key">defer</span> s.mu.<span class="c-fn">RUnlock</span>()
+    <span class="hl">return append([]model.Server(nil), s.servers...)</span>  <span class="c-comment">// 拷一份新切片返回</span>
+}</code></pre>
+
+<h3>如果偷懒直接 <code>return s.servers</code> 会怎样?</h3>
+
+<p>切片(slice)是个"胖指针"——它内部指向底层数组。你直接 return <code>s.servers</code>,等于把<b>内部数组的地址</b>交出去了。锁在函数返回时就 <code>RUnlock</code> 释放了,但调用方 handler 手里还攥着那个指针:</p>
+
+<div class="card race-anim">
+时刻1&nbsp;&nbsp;handler 拿到 <span class="g-a">list</span>(指向内部数组),锁已释放<br>
+时刻2&nbsp;&nbsp;handler 正在 <span class="g-a">json.Encode(list)</span> 逐个读取…<br>
+时刻3&nbsp;&nbsp;<span class="g-b">另一个 goroutine 调 Add(),append 触发扩容,数组搬家</span><br>
+时刻4&nbsp;&nbsp;<span class="lost">handler 还在读的那个旧数组,数据变了 / 悬空</span> → race 或脏读
+</div>
+
+<p><code>append([]model.Server(nil), s.servers...)</code> 的意思是:<b>新建一个空切片,把每个元素拷贝进去</b>。返回的是一份<b>快照</b>,和内部数据彻底脱钩。之后内部怎么变,都不影响调用方手里这份。锁保护的时间窗口和数据的生命周期<b>对齐</b>了。</p>
+
+<div class="analogy">
+  <b>运维类比:</b>同事问你现在有哪些服务器。你有两种回答:<br>
+  ❌ 把机房<b>钥匙</b>扔给他,让他自己进去数(他数的时候你还在里面插拔,他数的不准还危险)。<br>
+  ✅ 你进去<b>拍张照(快照)</b>递给他。照片是死的,你之后再改机房,不影响他手里的照片。<br>
+  <code>return append(nil, ...)</code> 就是"拍照片"。
+</div>
+
+<!-- ============ 6 ============ -->
+<h2 id="critical">6. 性能门道:临界区为什么要"尽量小"</h2>
+
+<p>"临界区"= 被锁保护的那段代码。锁住的时间越长,别人排队等得越久,并发越差。原则:<b>只锁"碰共享数据"的那几行,耗时操作(尤其是 IO)踢出锁外。</b></p>
+
+<div class="flow">
+<div style="flex:1; min-width:280px">
+<div class="warn" style="margin:0"><b>❌ 反例:把 Encode 也锁进去</b></div>
+<pre style="margin-top:8px"><code>mu.<span class="c-fn">RLock</span>()
+json.<span class="c-fn">NewEncoder</span>(w).<span class="c-fn">Encode</span>(servers)
+mu.<span class="c-fn">RUnlock</span>()
+<span class="c-comment">// Encode 要序列化+写网络,慢!</span>
+<span class="c-comment">// 锁被占着,别的读全堵住</span></code></pre>
+</div>
+<div style="flex:1; min-width:280px">
+<div class="ok" style="margin:0"><b>✅ 你的写法:锁内只拷贝</b></div>
+<pre style="margin-top:8px"><code>list := store.<span class="c-fn">List</span>()  <span class="c-comment">// 锁内极快</span>
+<span class="c-comment">// —— 锁已释放 ——</span>
+json.<span class="c-fn">NewEncoder</span>(w).<span class="c-fn">Encode</span>(list)
+<span class="c-comment">// 慢活在锁外干,不占锁</span></code></pre>
+</div>
+</div>
+
+<p>你的分层天然做对了:<code>List()</code> 在锁内只做"拷贝快照"(纳秒级),真正慢的 <code>json.Encode</code>(要序列化、写 socket)在 handler 里、锁外面做。持锁时间被压到最短。</p>
+
+<div class="analogy">
+  <b>运维类比:</b>你抢到了唯一的维护窗口(锁)。聪明做法是进机房<b>只把硬盘拔出来</b>(快),然后<b>出来</b>(还锁),在外面慢慢检测这块硬盘(慢)。傻做法是占着机房从头到尾检测,后面排队的人全在门口干等。
+</div>
+
+<!-- ============ 7 ============ -->
+<h2 id="encap">7. 封装的价值:锁藏起来,别人想忘都忘不了</h2>
+
+<p>这一关最高级的地方:<b>锁 <code>mu</code> 是小写的</b>,在 store 包外面<b>根本看不见、碰不到</b>。</p>
+
+<pre><code><span class="c-key">type</span> <span class="c-type">ServerStore</span> <span class="c-key">struct</span> {
+    mu      sync.RWMutex     <span class="c-comment">// 小写 = 私有,包外不可见</span>
+    servers []model.Server   <span class="c-comment">// 小写 = 私有,包外碰不到</span>
+}</code></pre>
+
+<p>handler 想访问数据,<b>只能</b>走你暴露的三个方法 <code>List()</code> / <code>Add()</code> / <code>Find()</code>,而这三个方法<b>内部已经加好锁了</b>。结果就是:</p>
+
+<div class="ok">
+  <b>调用方不可能"忘记加锁"——因为他压根没机会碰锁,也没机会碰裸数据。</b>加锁这件事被"焊死"在了数据旁边。这就叫<b>「把并发安全封装进类型」</b>,是 Go 工程管理共享状态的黄金姿势。
+</div>
+
+<p>对比 stage05:那时 <code>servers</code> 是全局裸切片,任何 handler 都能直接 <code>append</code>,全靠程序员"自觉记得加锁"。人是会忘的,一个 handler 忘了,整个服务就有 race。现在<b>结构上根除</b>了这种可能。</p>
+
+<div class="analogy">
+  <b>运维类比:</b>从"贴张纸条提醒大家操作前记得 flock"(靠自觉,总有人忘),升级到"把机器锁进保险柜,只留一个自动上锁/解锁的取物口"。想拿东西只能走那个口,锁是自动的,想违规都没门。
+</div>
+
+<!-- ============ 8 ============ -->
+<h2 id="bug">8. 你刚才犯的那个错,复盘</h2>
+
+<p>你的直觉"感觉写错了"很准。硬伤只有一个,但它让整个项目<b>编译不过</b>:</p>
+
+<pre><code><span class="c-comment">// main.go 里调用了:</span>
+serverStore := store.<span class="c-fn">New</span>()   <span class="c-comment">// ← 你调了 New()</span>
+
+<span class="c-comment">// 但 store.go 里…… 只有 List/Add/Find,压根没定义 New()</span>
+<span class="red">./main.go:13:23: undefined: store.New</span></code></pre>
+
+<p>你在 handler 包写了 <code>New()</code> 构造函数,但到 store 包<b>漏了同款</b>。属于"写到一半忘了收尾"。我补上的 <code>New()</code> 顺手做了两件事:</p>
+<ol>
+  <li>返回 <code>*ServerStore</code> 指针(第 4 节讲的,锁不能复制)</li>
+  <li>塞进三条种子数据(web-01/db-01/cache-01),让功能和 stage05 对齐,不退化</li>
+</ol>
+
+<details>
+<summary>另外我还悄悄帮你补回了 3 处 stage05 有、你这版丢了的校验(点开看)</summary>
+<table>
+  <tr><th>补回的校验</th><th>为什么重要</th></tr>
+  <tr><td>POST 必填字段非空 → 400</td><td>JSON 合法 ≠ 数据合法,不然能塞一台三个字段全空的服务器</td></tr>
+  <tr><td>/server 缺 name 参数 → 400</td><td>"没传参数"(客户端错)和"查无此机"(404)是两种语义,别混为一谈</td></tr>
+  <tr><td>/server 非 GET 方法 → 405</td><td>查询接口不该响应 POST/DELETE</td></tr>
+</table>
+</details>
+
+<!-- ============ 9 ============ -->
+<h2 id="verify">9. 怎么证明它真的安全:<code>-race</code> 照妖镜</h2>
+
+<p>并发 bug 最阴险的地方:它<b>时有时无</b>。你手测十次可能都对,上线高并发就崩。所以不能靠"看着没问题",要用工具<b>逼它现形</b>。</p>
+
+<pre><code><span class="c-comment"># 带竞态检测编译并运行(编译会慢一点、程序会占更多内存,值得)</span>
+go run <span class="hl">-race</span> .</code></pre>
+
+<p><code>-race</code> 会在运行时监视每一次内存访问。一旦发现"两个 goroutine 无锁并发读写同一个地址",立刻打印 <code>WARNING: DATA RACE</code> 并<b>精确指出是哪一行</b>。这是你排查并发问题的终极武器。</p>
+
+<p>我刚才对你修好的代码做了实测:</p>
+<pre><code><span class="c-comment"># 50 个 POST + 50 个 GET 几乎同时打</span>
+for i in $(seq 1 50); do
+  curl -s -X POST -d "{...srv-$i...}" localhost:8080/servers &
+  curl -s localhost:8080/servers &
+done; wait</code></pre>
+
+<div class="ok">
+<b>结果:</b><br>
+✅ <code>-race</code> 零 DATA RACE 警告 —— 锁真的挡住了竞争<br>
+✅ 3 条种子 + 50 条新增 = <b>53 条,一条不丢</b> —— 没有覆盖丢失<br>
+✅ 7 个边界用例(200/404/400/405)全对 —— 功能没退化
+</div>
+
+<div class="warn">
+  <b>反过来想:</b>如果你没加锁,这段压测在 <code>-race</code> 下<b>必然</b>刷屏 <code>DATA RACE</code>,而且 53 这个数字会时不时变成 51、52(丢数据)。stage06 README 的任务1,就是要你亲手把没加锁的版本跑出这个红色警告——"亲眼见过它崩",才会真的敬畏并发。
+</div>
+
+<div class="footer">
+  <p><b>一句话总结这一关:</b>共享数据 + 并发请求 = 必须加锁;锁要和数据封装在一起(想忘都忘不了);读多写少用 RWMutex;含锁结构体传指针;返回数据传副本;临界区越小越好;最后用 <code>-race</code> 验尸。</p>
+  <p>你从 stage05 埋下的那笔"并发债",这一关连本带利还清了。恭喜迈进"能写生产级并发服务"的门槛 💪</p>
+  <p style="color:var(--dim); font-size:13px">Stage06 · concurrent-safe · 你的导师</p>
+</div>
+
+</div>
+</body>
+</html>
